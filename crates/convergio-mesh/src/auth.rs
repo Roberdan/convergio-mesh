@@ -12,10 +12,10 @@ const NONCE_LEN: usize = 32;
 
 /// Generate a random 32-byte nonce for challenge-response.
 pub fn generate_nonce() -> Vec<u8> {
-    use rand::RngCore;
-    let mut nonce = vec![0u8; NONCE_LEN];
-    rand::thread_rng().fill_bytes(&mut nonce);
-    nonce
+    use rand::RngExt;
+    let mut nonce = [0u8; NONCE_LEN];
+    rand::rng().fill(&mut nonce);
+    nonce.to_vec()
 }
 
 /// Compute HMAC-SHA256(secret, data) for challenge-response or HTTP auth.
