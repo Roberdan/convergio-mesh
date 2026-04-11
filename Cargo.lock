@@ -281,7 +281,7 @@ dependencies = [
  "hmac",
  "hostname",
  "http-body-util",
- "rand 0.8.5",
+ "rand 0.10.1",
  "reqwest",
  "rusqlite",
  "serde",
