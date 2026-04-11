@@ -12,7 +12,6 @@ repository = "https://github.com/Roberdan/convergio-mesh"
 # SDK dependencies
 convergio-types = { git = "https://github.com/Roberdan/convergio-sdk", tag = "convergio-sdk-v0.1.6" }
 convergio-db = { git = "https://github.com/Roberdan/convergio-sdk", tag = "convergio-sdk-v0.1.6" }
-convergio-security = { git = "https://github.com/Roberdan/convergio-sdk", tag = "convergio-sdk-v0.1.6" }
 convergio-telemetry = { git = "https://github.com/Roberdan/convergio-sdk", tag = "convergio-sdk-v0.1.6" }
 
 # Common deps — pin same versions as SDK for compatibility

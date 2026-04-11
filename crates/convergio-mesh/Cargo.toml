@@ -8,7 +8,6 @@ license.workspace = true
 [dependencies]
 convergio-types = { workspace = true }
 convergio-db = { workspace = true }
-convergio-security = { workspace = true }
 convergio-telemetry = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
