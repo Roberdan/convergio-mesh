@@ -3,6 +3,7 @@
 //! Extracted from sync.rs to stay under 250-line limit.
 
 use rusqlite::Connection;
+use tracing;
 
 use crate::types::SyncChange;
 
@@ -73,8 +74,14 @@ fn sqlite_to_json(val: rusqlite::types::Value) -> serde_json::Value {
     }
 }
 
+/// Validate that a name (table or column) contains only safe identifier chars.
+fn is_safe_identifier(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// Apply remote changes using INSERT OR REPLACE.
-/// Disables foreign keys during import to avoid ordering issues.
+/// Validates table names against SYNC_TABLES allowlist and column names
+/// against safe identifier rules to prevent SQL injection.
 pub fn apply_changes(conn: &Connection, changes: &[SyncChange]) -> Result<usize, rusqlite::Error> {
     if changes.is_empty() {
         return Ok(0);
@@ -82,15 +89,32 @@ pub fn apply_changes(conn: &Connection, changes: &[SyncChange]) -> Result<usize,
     let mut applied = 0;
     conn.execute("PRAGMA foreign_keys = OFF", [])?;
     for change in changes {
+        // SECURITY: validate table name against allowlist
+        if !crate::types::SYNC_TABLES.contains(&change.table_name.as_str()) {
+            tracing::warn!(
+                table = %change.table_name,
+                "apply_changes: rejected table not in SYNC_TABLES allowlist"
+            );
+            continue;
+        }
         let Some(obj) = change.data.as_object() else {
             continue;
         };
+        // SECURITY: validate all column names are safe identifiers
         let cols: Vec<&str> = obj.keys().map(|k| k.as_str()).collect();
+        if cols.iter().any(|c| !is_safe_identifier(c)) {
+            tracing::warn!(
+                table = %change.table_name,
+                "apply_changes: rejected row with unsafe column names"
+            );
+            continue;
+        }
+        let quoted_cols: Vec<String> = cols.iter().map(|c| format!("\"{c}\"")).collect();
         let placeholders: Vec<String> = (1..=cols.len()).map(|i| format!("?{i}")).collect();
         let sql = format!(
             "INSERT OR REPLACE INTO \"{}\" ({}) VALUES ({})",
             change.table_name,
-            cols.join(", "),
+            quoted_cols.join(", "),
             placeholders.join(", ")
         );
         let vals: Vec<String> = obj.values().map(json_to_sql_string).collect();
@@ -141,23 +165,24 @@ mod tests {
     #[test]
     fn export_and_apply_roundtrip() {
         let conn = Connection::open_in_memory().unwrap();
+        // Use "plans" which is in SYNC_TABLES allowlist
         conn.execute_batch(
-            "CREATE TABLE test_sync (
+            "CREATE TABLE plans (
                 id INTEGER PRIMARY KEY,
                 name TEXT,
                 updated_at TEXT DEFAULT (datetime('now'))
             );
-            INSERT INTO test_sync (id, name) VALUES (1, 'alpha');
-            INSERT INTO test_sync (id, name) VALUES (2, 'beta');",
+            INSERT INTO plans (id, name) VALUES (1, 'alpha');
+            INSERT INTO plans (id, name) VALUES (2, 'beta');",
         )
         .unwrap();
-        let changes = export_changes_since(&conn, "test_sync", None).unwrap();
+        let changes = export_changes_since(&conn, "plans", None).unwrap();
         assert_eq!(changes.len(), 2);
 
         let conn2 = Connection::open_in_memory().unwrap();
         conn2
             .execute_batch(
-                "CREATE TABLE test_sync (
+                "CREATE TABLE plans (
                     id INTEGER PRIMARY KEY,
                     name TEXT,
                     updated_at TEXT
@@ -166,5 +191,38 @@ mod tests {
             .unwrap();
         let applied = apply_changes(&conn2, &changes).unwrap();
         assert_eq!(applied, 2);
+    }
+
+    #[test]
+    fn apply_rejects_table_not_in_allowlist() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE evil_table (id INTEGER PRIMARY KEY, data TEXT);")
+            .unwrap();
+        let changes = vec![SyncChange {
+            table_name: "evil_table".into(),
+            pk: 1,
+            data: serde_json::json!({"id": 1, "data": "hack"}),
+        }];
+        let applied = apply_changes(&conn, &changes).unwrap();
+        assert_eq!(applied, 0, "should reject tables not in SYNC_TABLES");
+    }
+
+    #[test]
+    fn apply_rejects_unsafe_column_names() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE plans (id INTEGER PRIMARY KEY, name TEXT, updated_at TEXT);",
+        )
+        .unwrap();
+        let mut data = serde_json::Map::new();
+        data.insert("id".into(), serde_json::json!(1));
+        data.insert("name; DROP TABLE plans--".into(), serde_json::json!("x"));
+        let changes = vec![SyncChange {
+            table_name: "plans".into(),
+            pk: 1,
+            data: serde_json::Value::Object(data),
+        }];
+        let applied = apply_changes(&conn, &changes).unwrap();
+        assert_eq!(applied, 0, "should reject rows with unsafe column names");
     }
 }

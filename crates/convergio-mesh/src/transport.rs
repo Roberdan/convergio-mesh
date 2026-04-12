@@ -76,8 +76,28 @@ fn apply_mesh_auth(
     req
 }
 
+/// Validate peer address is a safe host:port (no path, no scheme, no query).
+fn validate_peer_addr(addr: &str) -> Result<(), String> {
+    let parts: Vec<&str> = addr.rsplitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err(format!("invalid peer address (missing port): {addr}"));
+    }
+    let host = parts[1];
+    let port = parts[0];
+    // Port must be numeric
+    if port.parse::<u16>().is_err() {
+        return Err(format!("invalid port in peer address: {addr}"));
+    }
+    // Host must be a valid IP or hostname — no slashes, @, queries
+    if host.contains('/') || host.contains('@') || host.contains('?') || host.contains('#') {
+        return Err(format!("invalid chars in peer address host: {addr}"));
+    }
+    Ok(())
+}
+
 /// POST local changes to peer's /api/sync/import endpoint.
 pub fn send_changes_to_peer(peer_addr: &str, changes: &[SyncChange]) -> Result<(), String> {
+    validate_peer_addr(peer_addr)?;
     let path = "/api/sync/import";
     let url = format!("http://{peer_addr}{path}");
     let payload = serde_json::json!({ "changes": changes });
@@ -104,6 +124,11 @@ pub fn fetch_changes_from_peer(
     table: &str,
     since: Option<&str>,
 ) -> Result<Vec<SyncChange>, String> {
+    validate_peer_addr(peer_addr)?;
+    // SECURITY: validate table name against SYNC_TABLES allowlist
+    if !crate::types::SYNC_TABLES.contains(&table) {
+        return Err(format!("table '{table}' not in sync allowlist"));
+    }
     let mut path_query = format!("/api/sync/export?table={table}");
     let mut url = format!("http://{peer_addr}{path_query}");
     if let Some(ts) = since {
@@ -238,5 +263,21 @@ mod tests {
     fn resolve_no_candidates_returns_none() {
         let fields = HashMap::new();
         assert!(resolve_best_addr("ghost", &fields).is_none());
+    }
+
+    #[test]
+    fn validate_peer_addr_rejects_ssrf() {
+        assert!(validate_peer_addr("evil.com/admin@127.0.0.1:8420").is_err());
+        assert!(validate_peer_addr("127.0.0.1:8420?redirect=evil").is_err());
+        assert!(validate_peer_addr("127.0.0.1:8420#frag").is_err());
+        assert!(validate_peer_addr("noport").is_err());
+        assert!(validate_peer_addr("host:notaport").is_err());
+    }
+
+    #[test]
+    fn validate_peer_addr_accepts_valid() {
+        assert!(validate_peer_addr("192.168.1.1:8420").is_ok());
+        assert!(validate_peer_addr("100.0.0.1:8420").is_ok());
+        assert!(validate_peer_addr("myhost.local:8420").is_ok());
     }
 }

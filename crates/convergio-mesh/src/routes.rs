@@ -152,14 +152,22 @@ pub struct ExportQuery {
 async fn handle_export(
     State(state): State<Arc<MeshState>>,
     Query(params): Query<ExportQuery>,
-) -> Json<serde_json::Value> {
+) -> Response {
+    // SECURITY: only allow exporting from the SYNC_TABLES allowlist
+    if !crate::types::SYNC_TABLES.contains(&params.table.as_str()) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "table not in sync allowlist"})),
+        )
+            .into_response();
+    }
     let conn = match state.pool.get() {
         Ok(c) => c,
-        Err(e) => return Json(json!({"error": e.to_string()})),
+        Err(e) => return Json(json!({"error": e.to_string()})).into_response(),
     };
     match sync_apply::export_changes_since(&conn, &params.table, params.since.as_deref()) {
-        Ok(changes) => Json(json!({"changes": changes})),
-        Err(e) => Json(json!({"error": e.to_string()})),
+        Ok(changes) => Json(json!({"changes": changes})).into_response(),
+        Err(e) => Json(json!({"error": e.to_string()})).into_response(),
     }
 }
 
@@ -180,8 +188,22 @@ async fn handle_import(
             .get("x-mesh-signature")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
+        let timestamp = headers
+            .get("x-mesh-timestamp")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let body_hash_header = headers
+            .get("x-mesh-body-hash")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        // Reconstruct the signed message: timestamp:method:path:bodyhash
+        let message = if body_hash_header.is_empty() {
+            format!("{timestamp}:POST:/api/sync/import")
+        } else {
+            format!("{timestamp}:POST:/api/sync/import:{body_hash_header}")
+        };
         let sig_bytes = hex::decode(sig_header).unwrap_or_default();
-        match crate::auth::verify_hmac(secret, &body, &sig_bytes) {
+        match crate::auth::verify_hmac(secret, message.as_bytes(), &sig_bytes) {
             Ok(true) => {}
             _ => {
                 return (
@@ -291,8 +313,21 @@ async fn handle_heartbeat(
             .get("x-mesh-signature")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
+        let timestamp = headers
+            .get("x-mesh-timestamp")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let body_hash_header = headers
+            .get("x-mesh-body-hash")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let message = if body_hash_header.is_empty() {
+            format!("{timestamp}:POST:/api/heartbeat")
+        } else {
+            format!("{timestamp}:POST:/api/heartbeat:{body_hash_header}")
+        };
         let sig_bytes = hex::decode(sig_header).unwrap_or_default();
-        match crate::auth::verify_hmac(secret, &raw_body, &sig_bytes) {
+        match crate::auth::verify_hmac(secret, message.as_bytes(), &sig_bytes) {
             Ok(true) => {}
             _ => {
                 return (
