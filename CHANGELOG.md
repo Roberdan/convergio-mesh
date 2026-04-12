@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/Roberdan/convergio-mesh/compare/convergio-mesh-v0.1.4...convergio-mesh-v0.1.5) (2026-04-12)
+
+
+### Bug Fixes
+
+* align SDK dependency to v0.1.9 for type compatibility ([6f70cb8](https://github.com/Roberdan/convergio-mesh/commit/6f70cb8bb897c18bc661d93c4b17343d896ba42b))
+
 ## [0.1.4](https://github.com/Roberdan/convergio-mesh/compare/convergio-mesh-v0.1.3...convergio-mesh-v0.1.4) (2026-04-12)
 
 
