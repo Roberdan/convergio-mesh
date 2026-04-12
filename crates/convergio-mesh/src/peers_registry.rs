@@ -64,6 +64,19 @@ impl PeersRegistry {
             .map(|(n, p)| (n.as_str(), p))
             .collect()
     }
+
+    /// Look up a peer by name or alias.
+    pub fn get_peer<'a>(&'a self, name: &'a str) -> Option<(&'a str, &'a PeerConfig)> {
+        // Exact name match first
+        if let Some(cfg) = self.peers.get(name) {
+            return Some((name, cfg));
+        }
+        // Fallback: check aliases
+        self.peers
+            .iter()
+            .find(|(_, p)| p.aliases.iter().any(|a| a == name))
+            .map(|(n, p)| (n.as_str(), p))
+    }
 }
 
 #[cfg(test)]
@@ -152,5 +165,24 @@ status=active
         assert_eq!(reg.peers.len(), 3);
         reg.remove_peer("node3");
         assert_eq!(reg.peers.len(), 2);
+    }
+
+    #[test]
+    fn get_peer_by_alias() {
+        let ini = "[mesh]\nshared_secret=s\n\n\
+                   [node1]\nssh_alias=n1\nuser=alice\nos=macos\n\
+                   tailscale_ip=100.0.0.1\ndns_name=n1.ts.net\n\
+                   capabilities=claude\nrole=worker\nstatus=active\n\
+                   aliases=n1.local,my-node\n";
+        let reg = load_from_str(ini);
+        // Exact match
+        assert!(reg.get_peer("node1").is_some());
+        // Alias match
+        let (name, _) = reg.get_peer("n1.local").unwrap();
+        assert_eq!(name, "node1");
+        let (name, _) = reg.get_peer("my-node").unwrap();
+        assert_eq!(name, "node1");
+        // No match
+        assert!(reg.get_peer("nonexistent").is_none());
     }
 }
