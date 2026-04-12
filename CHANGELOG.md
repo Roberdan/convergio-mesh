@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/Roberdan/convergio-mesh/compare/convergio-mesh-v0.1.3...convergio-mesh-v0.1.4) (2026-04-12)
+
+
+### Documentation
+
+* add .env.example with required environment variables ([#9](https://github.com/Roberdan/convergio-mesh/issues/9)) ([d1b51a7](https://github.com/Roberdan/convergio-mesh/commit/d1b51a73b27d4a53e5dd8515135bd99dcceafb3d))
+
 ## [0.1.3](https://github.com/Roberdan/convergio-mesh/compare/convergio-mesh-v0.1.2...convergio-mesh-v0.1.3) (2026-04-12)
 
 
