@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/Roberdan/convergio-mesh/compare/convergio-mesh-v0.1.2...convergio-mesh-v0.1.3) (2026-04-12)
+
+
+### Bug Fixes
+
+* **security:** comprehensive audit — SQL injection, SSRF, HMAC, auth hardening ([#7](https://github.com/Roberdan/convergio-mesh/issues/7)) ([c92c6ac](https://github.com/Roberdan/convergio-mesh/commit/c92c6acc94786ddfb9a86eb21a0b50b5c7819ba5))
+
 ## [0.1.2](https://github.com/Roberdan/convergio-mesh/compare/convergio-mesh-v0.1.1...convergio-mesh-v0.1.2) (2026-04-12)
 
 
