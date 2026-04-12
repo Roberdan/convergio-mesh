@@ -14,7 +14,7 @@ const NONCE_LEN: usize = 32;
 pub fn generate_nonce() -> Vec<u8> {
     use rand::RngCore;
     let mut nonce = vec![0u8; NONCE_LEN];
-    rand::thread_rng().fill_bytes(&mut nonce);
+    rand::rng().fill_bytes(&mut nonce);
     nonce
 }
 
