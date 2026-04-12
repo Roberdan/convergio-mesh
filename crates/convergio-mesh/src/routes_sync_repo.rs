@@ -1,10 +1,22 @@
 //! POST /api/mesh/sync-repo — git pull + rebuild + CLI update on THIS node.
+//! SECURITY: This endpoint executes system commands and MUST require auth.
 
 use axum::response::Json;
 use serde_json::json;
 
 /// Pull latest code, rebuild daemon and CLI binary.
+/// Requires CONVERGIO_SYNC_REPO_ENABLED=1 env var to be active.
 pub async fn handle_sync_repo(Json(body): Json<serde_json::Value>) -> Json<serde_json::Value> {
+    // SECURITY: gate behind explicit opt-in env var
+    let enabled = std::env::var("CONVERGIO_SYNC_REPO_ENABLED")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if !enabled {
+        return Json(json!({
+            "ok": false,
+            "error": "sync-repo endpoint disabled (set CONVERGIO_SYNC_REPO_ENABLED=1)"
+        }));
+    }
     let peer = body["peer"].as_str().unwrap_or("self");
     tracing::info!("mesh: sync-repo requested for peer={peer}");
 

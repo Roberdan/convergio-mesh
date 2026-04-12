@@ -20,8 +20,12 @@ pub fn generate_nonce() -> Vec<u8> {
 
 /// Compute HMAC-SHA256(secret, data) for challenge-response or HTTP auth.
 pub fn compute_hmac(secret: &[u8], data: &[u8]) -> Result<Vec<u8>, MeshError> {
-    debug_assert!(!secret.is_empty(), "HMAC secret must not be empty");
-    debug_assert!(!data.is_empty(), "HMAC data must not be empty");
+    if secret.is_empty() {
+        return Err(MeshError::Auth("HMAC secret must not be empty".into()));
+    }
+    if data.is_empty() {
+        return Err(MeshError::Auth("HMAC data must not be empty".into()));
+    }
     let mut mac = HmacSha256::new_from_slice(secret)
         .map_err(|_| MeshError::Auth("invalid HMAC key length".into()))?;
     mac.update(data);
@@ -30,8 +34,12 @@ pub fn compute_hmac(secret: &[u8], data: &[u8]) -> Result<Vec<u8>, MeshError> {
 
 /// Verify a peer's HMAC response against expected.
 pub fn verify_hmac(secret: &[u8], data: &[u8], response: &[u8]) -> Result<bool, MeshError> {
-    debug_assert!(!secret.is_empty(), "HMAC secret must not be empty");
-    debug_assert!(!data.is_empty(), "HMAC data must not be empty");
+    if secret.is_empty() {
+        return Err(MeshError::Auth("HMAC secret must not be empty".into()));
+    }
+    if data.is_empty() {
+        return Err(MeshError::Auth("HMAC data must not be empty".into()));
+    }
     let mut mac = HmacSha256::new_from_slice(secret)
         .map_err(|_| MeshError::Auth("invalid HMAC key length".into()))?;
     mac.update(data);
@@ -129,5 +137,21 @@ mod tests {
         let n2 = generate_nonce();
         assert_ne!(n1, n2);
         assert_eq!(n1.len(), NONCE_LEN);
+    }
+
+    #[test]
+    fn compute_hmac_rejects_empty_secret() {
+        assert!(compute_hmac(&[], b"data").is_err());
+    }
+
+    #[test]
+    fn compute_hmac_rejects_empty_data() {
+        let secret = format!("s-{}", 1).into_bytes();
+        assert!(compute_hmac(&secret, &[]).is_err());
+    }
+
+    #[test]
+    fn verify_hmac_rejects_empty_secret() {
+        assert!(verify_hmac(&[], b"data", b"sig").is_err());
     }
 }
