@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/Roberdan/convergio-mesh/compare/v0.1.6...v0.1.7) (2026-04-13)
+
+
+### Bug Fixes
+
+* add crates.io publishing metadata (description, repository) ([762b1ce](https://github.com/Roberdan/convergio-mesh/commit/762b1ce0c3a1fc4132ba8e5ede9cede1903d8ca4))
+
 ## [0.1.6](https://github.com/Roberdan/convergio-mesh/compare/v0.1.5...v0.1.6) (2026-04-13)
 
 
