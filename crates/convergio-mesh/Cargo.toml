@@ -4,6 +4,7 @@ description = "Peer discovery, delta sync, delegation tracking"
 version = "0.1.6"
 edition.workspace = true
 license.workspace = true
+repository = "https://github.com/Roberdan/convergio-mesh"
 
 [dependencies]
 convergio-types = { workspace = true }
