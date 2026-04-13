@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/Roberdan/convergio-mesh/compare/v0.1.7...v0.1.8) (2026-04-13)
+
+
+### Bug Fixes
+
+* pass CARGO_REGISTRY_TOKEN to release workflow ([4f4ed13](https://github.com/Roberdan/convergio-mesh/commit/4f4ed1343225c9916cf853dc82b4a99bbfb68b52))
+
 ## [0.1.7](https://github.com/Roberdan/convergio-mesh/compare/v0.1.6...v0.1.7) (2026-04-13)
 
 
