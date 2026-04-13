@@ -129,19 +129,23 @@ pub fn fetch_changes_from_peer(
     if !crate::types::SYNC_TABLES.contains(&table) {
         return Err(format!("table '{table}' not in sync allowlist"));
     }
-    let mut path_query = format!("/api/sync/export?table={table}");
-    let mut url = format!("http://{peer_addr}{path_query}");
-    if let Some(ts) = since {
-        let suffix = format!("&since={ts}");
-        url.push_str(&suffix);
-        path_query.push_str(&suffix);
-    }
+    let url = format!("http://{peer_addr}/api/sync/export");
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| format!("HTTP client build failed: {e}"))?;
-    let req = apply_mesh_auth(client.get(&url), "GET", &path_query, None);
+    // Build query params safely via reqwest to avoid injection
+    let mut query_params: Vec<(&str, &str)> = vec![("table", table)];
+    if let Some(ts) = since {
+        query_params.push(("since", ts));
+    }
+    let path_query = match since {
+        Some(ts) => format!("/api/sync/export?table={table}&since={ts}"),
+        None => format!("/api/sync/export?table={table}"),
+    };
+    let req = client.get(&url).query(&query_params);
+    let req = apply_mesh_auth(req, "GET", &path_query, None);
     let resp = req.send().map_err(|e| format!("HTTP GET failed: {e}"))?;
     if !resp.status().is_success() {
         return Err(format!("peer returned {}", resp.status()));

@@ -112,20 +112,10 @@ fn send_heartbeat_to_peer(addr: &str, shared_secret: &str) {
     });
     let body_bytes = serde_json::to_vec(&body).unwrap_or_default();
 
-    // Sign with HMAC using the mesh shared secret
-    let signature = if !shared_secret.is_empty() {
-        crate::auth::compute_hmac(shared_secret.as_bytes(), &body_bytes)
-            .map(hex::encode)
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
-
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))
         .build();
     let Ok(client) = client else { return };
-    // Bearer for auth middleware + HMAC for heartbeat handler
     let token = match std::env::var("CONVERGIO_AUTH_TOKEN") {
         Ok(t) if !t.is_empty() => t,
         _ => {
@@ -137,9 +127,22 @@ fn send_heartbeat_to_peer(addr: &str, shared_secret: &str) {
         .post(&url)
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {token}"));
-    if !signature.is_empty() {
-        req = req.header("x-mesh-signature", &signature);
+
+    // Sign with HMAC using the same timestamp:method:path:bodyhash protocol
+    // that the receiver expects (matching apply_mesh_auth in transport.rs).
+    if !shared_secret.is_empty() {
+        use sha2::{Digest, Sha256};
+        let body_hash = hex::encode(Sha256::digest(&body_bytes));
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let message = format!("{timestamp}:POST:/api/heartbeat:{body_hash}");
+        if let Ok(sig) = crate::auth::compute_hmac(shared_secret.as_bytes(), message.as_bytes()) {
+            req = req
+                .header("X-Mesh-Timestamp", &timestamp)
+                .header("X-Mesh-Signature", hex::encode(sig))
+                .header("X-Mesh-Body-Hash", &body_hash);
+        }
     }
+
     match req.body(body_bytes).send() {
         Ok(r) if r.status().is_success() => {
             info!(addr, "heartbeat sent");

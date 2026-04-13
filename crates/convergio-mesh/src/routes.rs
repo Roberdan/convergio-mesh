@@ -23,6 +23,9 @@ use crate::routes_sync_repo::handle_sync_repo;
 use crate::sync_apply;
 use crate::types::SyncChange;
 
+/// Maximum age (seconds) for HMAC-signed requests to prevent replay attacks.
+const HMAC_MAX_AGE_SECS: i64 = 300;
+
 pub struct MeshState {
     pub pool: ConnPool,
     /// Pre-loaded shared secret for HMAC verification (from peers.conf).
@@ -192,6 +195,17 @@ async fn handle_import(
             .get("x-mesh-timestamp")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
+        // Reject stale timestamps to prevent replay attacks
+        if let Ok(ts) = timestamp.parse::<i64>() {
+            let now = chrono::Utc::now().timestamp();
+            if (now - ts).abs() > HMAC_MAX_AGE_SECS {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"error": "HMAC timestamp expired"})),
+                )
+                    .into_response();
+            }
+        }
         let body_hash_header = headers
             .get("x-mesh-body-hash")
             .and_then(|v| v.to_str().ok())
@@ -317,6 +331,17 @@ async fn handle_heartbeat(
             .get("x-mesh-timestamp")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
+        // Reject stale timestamps to prevent replay attacks
+        if let Ok(ts) = timestamp.parse::<i64>() {
+            let now = chrono::Utc::now().timestamp();
+            if (now - ts).abs() > HMAC_MAX_AGE_SECS {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"error": "HMAC timestamp expired"})),
+                )
+                    .into_response();
+            }
+        }
         let body_hash_header = headers
             .get("x-mesh-body-hash")
             .and_then(|v| v.to_str().ok())

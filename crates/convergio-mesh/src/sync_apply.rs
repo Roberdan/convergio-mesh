@@ -88,6 +88,17 @@ pub fn apply_changes(conn: &Connection, changes: &[SyncChange]) -> Result<usize,
     }
     let mut applied = 0;
     conn.execute("PRAGMA foreign_keys = OFF", [])?;
+    let result = apply_changes_inner(conn, changes, &mut applied);
+    // Always re-enable foreign keys, even if inner loop failed
+    conn.execute("PRAGMA foreign_keys = ON", [])?;
+    result.map(|_| applied)
+}
+
+fn apply_changes_inner(
+    conn: &Connection,
+    changes: &[SyncChange],
+    applied: &mut usize,
+) -> Result<(), rusqlite::Error> {
     for change in changes {
         // SECURITY: validate table name against allowlist
         if !crate::types::SYNC_TABLES.contains(&change.table_name.as_str()) {
@@ -123,11 +134,10 @@ pub fn apply_changes(conn: &Connection, changes: &[SyncChange]) -> Result<usize,
             .map(|v| v as &dyn rusqlite::types::ToSql)
             .collect();
         if conn.execute(&sql, params.as_slice()).is_ok() {
-            applied += 1;
+            *applied += 1;
         }
     }
-    conn.execute("PRAGMA foreign_keys = ON", [])?;
-    Ok(applied)
+    Ok(())
 }
 
 fn json_to_sql_string(v: &serde_json::Value) -> String {
