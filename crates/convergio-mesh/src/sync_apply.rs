@@ -26,12 +26,15 @@ pub fn export_changes_since(
         return Ok(vec![]);
     }
 
-    let sql = match since {
-        Some(_) => format!(
+    // Detect timestamp column: prefer updated_at, fall back to created_at
+    let ts_col = detect_timestamp_column(conn, table);
+
+    let sql = match (&since, &ts_col) {
+        (Some(_), Some(col)) => format!(
             "SELECT id, * FROM \"{table}\" \
-             WHERE REPLACE(updated_at,'T',' ') > ?1 ORDER BY id"
+             WHERE REPLACE(\"{col}\",'T',' ') > ?1 ORDER BY id"
         ),
-        None => format!("SELECT id, * FROM \"{table}\" ORDER BY id"),
+        _ => format!("SELECT id, * FROM \"{table}\" ORDER BY id"),
     };
     let mut stmt = conn.prepare(&sql)?;
     let col_count = stmt.column_count();
@@ -46,7 +49,14 @@ pub fn export_changes_since(
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     let rows = stmt.query_map(param_refs.as_slice(), |row| {
-        let pk: i64 = row.get(0)?;
+        // Support both INTEGER and TEXT primary keys
+        let pk: serde_json::Value = match row.get::<_, i64>(0) {
+            Ok(i) => serde_json::json!(i),
+            Err(_) => match row.get::<_, String>(0) {
+                Ok(s) => serde_json::json!(s),
+                Err(_) => serde_json::json!(0),
+            },
+        };
         let mut data = serde_json::Map::new();
         for (i, name) in col_names.iter().enumerate().skip(1) {
             let val: rusqlite::types::Value = row.get(i)?;
@@ -59,6 +69,25 @@ pub fn export_changes_since(
         })
     })?;
     rows.collect()
+}
+
+/// Detect which timestamp column a table has: updated_at, created_at, or none.
+fn detect_timestamp_column(conn: &Connection, table: &str) -> Option<String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+        .ok()?;
+    let cols: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .ok()?
+        .filter_map(|r| r.ok())
+        .collect();
+    if cols.iter().any(|c| c == "updated_at") {
+        Some("updated_at".into())
+    } else if cols.iter().any(|c| c == "created_at") {
+        Some("created_at".into())
+    } else {
+        None
+    }
 }
 
 fn sqlite_to_json(val: rusqlite::types::Value) -> serde_json::Value {
@@ -210,7 +239,7 @@ mod tests {
             .unwrap();
         let changes = vec![SyncChange {
             table_name: "evil_table".into(),
-            pk: 1,
+            pk: serde_json::json!(1),
             data: serde_json::json!({"id": 1, "data": "hack"}),
         }];
         let applied = apply_changes(&conn, &changes).unwrap();
@@ -229,7 +258,7 @@ mod tests {
         data.insert("name; DROP TABLE plans--".into(), serde_json::json!("x"));
         let changes = vec![SyncChange {
             table_name: "plans".into(),
-            pk: 1,
+            pk: serde_json::json!(1),
             data: serde_json::Value::Object(data),
         }];
         let applied = apply_changes(&conn, &changes).unwrap();

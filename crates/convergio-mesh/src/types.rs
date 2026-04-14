@@ -15,7 +15,7 @@ pub struct SyncMeta {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncChange {
     pub table_name: String,
-    pub pk: i64,
+    pub pk: serde_json::Value,
     pub data: serde_json::Value,
 }
 
@@ -48,7 +48,9 @@ pub struct DelegateResult {
 }
 
 /// Tables eligible for timestamp-based sync.
-/// Each table must have `id INTEGER PRIMARY KEY` and `updated_at TEXT`.
+/// Auto-discovered: any table with `updated_at` or `created_at` column
+/// is synced unless it's in the denylist.
+/// Legacy allowlist kept for backward compatibility.
 pub const SYNC_TABLES: &[&str] = &[
     "plans",
     "tasks",
@@ -59,6 +61,17 @@ pub const SYNC_TABLES: &[&str] = &[
     "delegations",
     "solve_sessions",
     "agent_catalog",
+    "ipc_messages",
+    "ipc_agents",
+];
+
+/// Tables that should NOT be synced across mesh peers.
+pub const SYNC_DENYLIST: &[&str] = &[
+    "_schema_registry",
+    "sqlite_sequence",
+    "peer_heartbeats",
+    "mesh_sync_stats",
+    "mesh_peer_state",
 ];
 
 /// Default sync interval in seconds.
@@ -85,7 +98,7 @@ mod tests {
     fn sync_change_serialization() {
         let change = SyncChange {
             table_name: "plans".into(),
-            pk: 42,
+            pk: serde_json::json!(42),
             data: serde_json::json!({"status": "doing"}),
         };
         let json = serde_json::to_string(&change).unwrap();
