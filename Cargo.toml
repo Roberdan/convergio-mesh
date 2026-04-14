@@ -27,7 +27,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 base64 = "0.22"
 hmac = "0.12"
 sha2 = "0.10"
-rand = "0.9.3"
+rand = "0.9.4"
 rusqlite = { version = "0.32", features = ["bundled", "functions"] }
 hex = "0.4"
 hostname = "0.4"
