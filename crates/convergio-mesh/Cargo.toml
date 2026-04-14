@@ -1,7 +1,7 @@
 [package]
 name = "convergio-mesh"
 description = "Peer discovery, delta sync, delegation tracking"
-version = "0.1.10"
+version = "0.1.9"
 edition.workspace = true
 license.workspace = true
 repository = "https://github.com/Roberdan/convergio-mesh"

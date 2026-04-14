@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.9](https://github.com/Roberdan/convergio-mesh/compare/v0.1.8...v0.1.9) (2026-04-14)
+
+
+### Features
+
+* sync IPC messages + agents across mesh, support TEXT primary keys ([4b20011](https://github.com/Roberdan/convergio-mesh/commit/4b20011b3b66a8dad5698d800a9979b7201f9bfe))
+
+
+### Bug Fixes
+
+* mesh heartbeat uses dev-local token fallback instead of skipping ([eb0c800](https://github.com/Roberdan/convergio-mesh/commit/eb0c80068f605f15b4115845b3c5919ddafe7055))
+* **security:** audit pass  HMAC protocol, replay, FK guard, URL encoding2 ([5393cad](https://github.com/Roberdan/convergio-mesh/commit/5393cadf6c9c81f02bf3e73143c11dada2790be1))
+
 ## [0.1.8](https://github.com/Roberdan/convergio-mesh/compare/v0.1.7...v0.1.8) (2026-04-13)
 
 
