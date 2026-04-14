@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/Roberdan/convergio-mesh/compare/v0.1.10...v0.1.11) (2026-04-14)
+
+
+### Features
+
+* notify IPC receivers when mesh syncs ipc_messages ([0194f8b](https://github.com/Roberdan/convergio-mesh/commit/0194f8b8c1419b2fbfc9adbfba82e806c54d3f72))
+
 ## [0.1.10](https://github.com/Roberdan/convergio-mesh/compare/v0.1.9...v0.1.10) (2026-04-14)
 
 
