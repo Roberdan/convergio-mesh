@@ -116,13 +116,7 @@ fn send_heartbeat_to_peer(addr: &str, shared_secret: &str) {
         .timeout(Duration::from_secs(5))
         .build();
     let Ok(client) = client else { return };
-    let token = match std::env::var("CONVERGIO_AUTH_TOKEN") {
-        Ok(t) if !t.is_empty() => t,
-        _ => {
-            tracing::warn!(addr, "heartbeat skipped: CONVERGIO_AUTH_TOKEN not set");
-            return;
-        }
-    };
+    let token = std::env::var("CONVERGIO_AUTH_TOKEN").unwrap_or_else(|_| "dev-local".into());
     let mut req = client
         .post(&url)
         .header("Content-Type", "application/json")
