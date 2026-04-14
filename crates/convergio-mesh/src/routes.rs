@@ -237,7 +237,25 @@ async fn handle_import(
         Err(e) => return Json(json!({"error": e.to_string()})).into_response(),
     };
     match sync_apply::apply_changes(&conn, &payload.changes) {
-        Ok(applied) => Json(json!({"applied": applied})).into_response(),
+        Ok(applied) => {
+            // Wake IPC long-poll receivers if ipc_messages were synced
+            if applied > 0
+                && payload
+                    .changes
+                    .iter()
+                    .any(|c| c.table_name == "ipc_messages")
+            {
+                // Poke the IPC notify endpoint so receive_wait wakes up
+                tokio::spawn(async {
+                    let _ = reqwest::Client::new()
+                        .post("http://localhost:8420/api/ipc/notify-sync")
+                        .header("Authorization", convergio_types::dev_auth_header())
+                        .send()
+                        .await;
+                });
+            }
+            Json(json!({"applied": applied})).into_response()
+        }
         Err(e) => Json(json!({"error": e.to_string()})).into_response(),
     }
 }
