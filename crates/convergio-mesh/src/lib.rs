@@ -16,6 +16,7 @@ pub mod peers_parser;
 pub mod peers_registry;
 pub mod peers_types;
 pub mod routes;
+pub mod routes_cross_poll;
 pub mod routes_role_config;
 pub mod routes_sync_repo;
 pub mod schema;

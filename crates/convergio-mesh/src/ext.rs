@@ -114,10 +114,11 @@ impl Extension for MeshExtension {
             pool: self.pool.clone(),
             shared_secret: self.shared_secret.clone(),
         });
-        let base = crate::routes::mesh_routes(state);
+        let base = crate::routes::mesh_routes(state.clone());
         let cap_routes = crate::capability_routes::capability_routes(self.pool.clone());
         let role_routes = crate::routes_role_config::role_config_routes(self.pool.clone());
-        Some(base.merge(cap_routes).merge(role_routes))
+        let cross_poll = crate::routes_cross_poll::cross_poll_routes(state);
+        Some(base.merge(cap_routes).merge(role_routes).merge(cross_poll))
     }
 
     fn migrations(&self) -> Vec<Migration> {
