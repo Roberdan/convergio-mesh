@@ -63,17 +63,16 @@ fn local_plans_summary(state: &MeshState) -> Response {
 
 async fn proxy_to_peer(peer_name: &str) -> Response {
     let peer_name = peer_name.to_owned();
-    let addr = match tokio::task::spawn_blocking({
+    let resolved = tokio::task::spawn_blocking({
         let peer_name = peer_name.clone();
         move || resolve_peer_addr(&peer_name)
     })
-    .await
-    {
-        Ok(Ok((canonical, addr))) => (canonical, addr),
-        Ok(Err(e)) => return e,
+    .await;
+    let (canonical, addr) = match resolved {
+        Ok(Ok(pair)) => pair,
+        Ok(Err(msg)) => return bad_gateway(&msg),
         Err(e) => return Json(json!({"error": format!("task join: {e}")})).into_response(),
     };
-    let (canonical, addr) = addr;
     let url = format!("http://{addr}/api/mesh/plans/summary");
     let client = match reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(5))
@@ -102,21 +101,16 @@ async fn proxy_to_peer(peer_name: &str) -> Response {
     }
 }
 
-fn resolve_peer_addr(peer_name: &str) -> Result<(String, String), Response> {
+fn resolve_peer_addr(peer_name: &str) -> Result<(String, String), String> {
     let conf_path = std::path::PathBuf::from(peers_conf_path_from_env());
-    let registry = PeersRegistry::load(&conf_path)
-        .map_err(|e| Json(json!({"error": format!("load peers.conf: {e}")})).into_response())?;
-    let (canonical, cfg) = registry.get_peer(peer_name).ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": format!("peer '{peer_name}' not found")})),
-        )
-            .into_response()
-    })?;
+    let registry = PeersRegistry::load(&conf_path).map_err(|e| format!("load peers.conf: {e}"))?;
+    let (canonical, cfg) = registry
+        .get_peer(peer_name)
+        .ok_or_else(|| format!("peer '{peer_name}' not found"))?;
     let canonical = canonical.to_owned();
     let fields = peer_config_to_fields(cfg);
     let addr = resolve_best_addr(&canonical, &fields)
-        .ok_or_else(|| bad_gateway(&format!("peer '{canonical}' unreachable")))?;
+        .ok_or_else(|| format!("peer '{canonical}' unreachable"))?;
     Ok((canonical, addr))
 }
 
