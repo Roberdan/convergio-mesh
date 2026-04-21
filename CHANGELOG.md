@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.12](https://github.com/Roberdan/convergio-mesh/compare/v0.1.11...v0.1.12) (2026-04-21)
+
+
+### Features
+
+* add cross-poll routes for mesh plan summary proxy ([34251d3](https://github.com/Roberdan/convergio-mesh/commit/34251d35aec1fce07a70b8622472f25020733aa9))
+
+
+### Bug Fixes
+
+* address clippy result_large_err in cross-poll proxy ([881124b](https://github.com/Roberdan/convergio-mesh/commit/881124bacf4abb05aae190626768780e4fd6ff69))
+
 ## [0.1.11](https://github.com/Roberdan/convergio-mesh/compare/v0.1.10...v0.1.11) (2026-04-14)
 
 
