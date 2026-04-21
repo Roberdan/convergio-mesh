@@ -22,6 +22,7 @@ pub mod routes_sync_repo;
 pub mod schema;
 pub mod sync;
 pub mod sync_apply;
+pub mod sync_cursor;
 pub mod sync_loop;
 pub mod transport;
 pub mod types;

@@ -136,37 +136,77 @@ fn local_updated_at(conn: &Connection, table: &str, pk: &serde_json::Value) -> O
     }
 }
 
+/// Detailed report from an apply_changes call.
+///
+/// `applied_max_updated_at` is the highest `updated_at` across rows the
+/// local DB committed. Sync loop callers advance their cursor from
+/// MAX(exported_max, applied_max) instead of wall-clock — see
+/// docs/sync-drift-root-cause.md §1.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ApplyReport {
+    pub applied: usize,
+    pub rejected: usize,
+    pub applied_max_updated_at: Option<String>,
+}
+
 /// Apply remote changes with LWW conflict resolution.
 /// - Validates table names against SYNC_TABLES allowlist
 /// - Validates column names against safe identifier rules
 /// - Filters out columns the local schema doesn't have (schema tolerance)
 /// - Only overwrites when remote `updated_at` is strictly newer (LWW)
 pub fn apply_changes(conn: &Connection, changes: &[SyncChange]) -> Result<usize, rusqlite::Error> {
+    apply_changes_detailed(conn, changes).map(|r| r.applied)
+}
+
+/// Same as `apply_changes` but returns a detailed report so callers can
+/// advance a sync cursor on row-data — not wall-clock.
+pub fn apply_changes_detailed(
+    conn: &Connection,
+    changes: &[SyncChange],
+) -> Result<ApplyReport, rusqlite::Error> {
     if changes.is_empty() {
-        return Ok(0);
+        return Ok(ApplyReport::default());
     }
-    let mut applied = 0;
+    let mut report = ApplyReport::default();
     conn.execute("PRAGMA foreign_keys = OFF", [])?;
-    let result = apply_changes_inner(conn, changes, &mut applied);
+    let result = apply_changes_inner(conn, changes, &mut report);
     conn.execute("PRAGMA foreign_keys = ON", [])?;
-    result.map(|_| applied)
+    result.map(|_| report)
+}
+
+/// Max `updated_at` value across a slice of changes.
+/// Timestamps are compared lexicographically — safe for canonical
+/// `YYYY-MM-DD HH:MM:SS` and RFC3339 shapes after `T`-normalisation.
+pub fn max_updated_at(changes: &[SyncChange]) -> Option<String> {
+    changes
+        .iter()
+        .filter_map(|c| c.data.as_object())
+        .filter_map(|o| {
+            o.get("updated_at")
+                .and_then(|v| v.as_str())
+                .map(|s| s.replace('T', " "))
+        })
+        .max()
 }
 
 fn apply_changes_inner(
     conn: &Connection,
     changes: &[SyncChange],
-    applied: &mut usize,
+    report: &mut ApplyReport,
 ) -> Result<(), rusqlite::Error> {
     for change in changes {
         if !crate::types::SYNC_TABLES.contains(&change.table_name.as_str()) {
             tracing::warn!(table = %change.table_name, "rejected: not in SYNC_TABLES");
+            report.rejected += 1;
             continue;
         }
         let Some(obj) = change.data.as_object() else {
+            report.rejected += 1;
             continue;
         };
         let local_cols = local_table_columns(conn, &change.table_name);
         if local_cols.is_empty() {
+            report.rejected += 1;
             continue;
         }
         // Filter to columns that exist locally (schema tolerance)
@@ -176,18 +216,24 @@ fn apply_changes_inner(
             .filter(|c| local_cols.iter().any(|lc| lc == c))
             .collect();
         if cols.is_empty() {
+            report.rejected += 1;
             continue;
         }
         if cols.iter().any(|c| !is_safe_identifier(c)) {
             tracing::warn!(table = %change.table_name, "rejected: unsafe column names");
+            report.rejected += 1;
             continue;
         }
         // LWW: skip if local row has newer or equal updated_at
-        if let Some(remote_ts) = obj.get("updated_at").and_then(|v| v.as_str()) {
+        let remote_updated = obj
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .map(|s| s.replace('T', " "));
+        if let Some(remote_ts) = &remote_updated {
             if let Some(local_ts) = local_updated_at(conn, &change.table_name, &change.pk) {
-                let r = remote_ts.replace('T', " ");
                 let l = local_ts.replace('T', " ");
-                if r <= l {
+                if remote_ts.as_str() <= l.as_str() {
+                    report.rejected += 1;
                     continue;
                 }
             }
@@ -208,8 +254,27 @@ fn apply_changes_inner(
             .iter()
             .map(|v| v as &dyn rusqlite::types::ToSql)
             .collect();
-        if conn.execute(&sql, params.as_slice()).is_ok() {
-            *applied += 1;
+        match conn.execute(&sql, params.as_slice()) {
+            Ok(_) => {
+                report.applied += 1;
+                if let Some(ts) = remote_updated {
+                    match &report.applied_max_updated_at {
+                        Some(cur) if cur.as_str() >= ts.as_str() => {}
+                        _ => report.applied_max_updated_at = Some(ts),
+                    }
+                }
+            }
+            Err(e) => {
+                // WHY: sync-drift-root-cause.md §4 — silent drops poisoned
+                // the cursor. Count the reject so callers can detect loss.
+                tracing::warn!(
+                    table = %change.table_name,
+                    pk = ?change.pk,
+                    error = %e,
+                    "apply rejected row",
+                );
+                report.rejected += 1;
+            }
         }
     }
     Ok(())
