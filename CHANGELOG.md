@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.13](https://github.com/Roberdan/convergio-mesh/compare/v0.1.12...v0.1.13) (2026-04-22)
+
+
+### Bug Fixes
+
+* **mesh:** canonicalize peer identity to dedupe registry (plan 2448 T7-01) ([cf97bd4](https://github.com/Roberdan/convergio-mesh/commit/cf97bd4f5b49400a236affca62ad87896692ef86))
+* **mesh:** canonicalize peer identity to dedupe registry entries (plan 2448 T7-01) ([138dac8](https://github.com/Roberdan/convergio-mesh/commit/138dac861b620eba246e399ac7abc42fa2a205b7))
+* **sync:** advance cursor from row data, cap at round_start_at ([351a4b9](https://github.com/Roberdan/convergio-mesh/commit/351a4b96f13e2d90f1aafaf1f488146d3c30f9bd))
+* **sync:** advance cursor from row data, cap at round_start_at (plan 2448 T1-03) ([cf19159](https://github.com/Roberdan/convergio-mesh/commit/cf1915913a7b213b4675d935bebe8d803d426967))
+* **sync:** LWW conflict resolution + schema tolerance in apply_changes ([1c6a04f](https://github.com/Roberdan/convergio-mesh/commit/1c6a04febe8b467887436ec9535cc2b991473d96))
+
 ## [0.1.12](https://github.com/Roberdan/convergio-mesh/compare/v0.1.11...v0.1.12) (2026-04-21)
 
 
