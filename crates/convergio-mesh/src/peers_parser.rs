@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::peers_types::{PeerConfig, PeersError};
+use crate::peers_types::{canonical_peer_name, PeerConfig, PeersError};
 
 fn require(map: &BTreeMap<String, String>, key: &str, peer: &str) -> Result<String, PeersError> {
     map.get(key)
@@ -62,8 +62,24 @@ fn flush_section(
                 *secret = s.clone();
             }
         } else {
-            let cfg = build_peer(name, kv)?;
-            peers.insert(name.clone(), cfg);
+            // Canonicalize identity so `M5Max.local` and `M5Max` collapse to one entry.
+            let canon = canonical_peer_name(name);
+            let mut cfg = build_peer(name, kv)?;
+            // Preserve the raw section name as an alias if it differs from the canonical
+            // form, so observability/back-references survive the normalization.
+            if name != &canon && !cfg.aliases.iter().any(|a| a == name) {
+                cfg.aliases.push(name.clone());
+            }
+            if let Some(existing) = peers.get_mut(&canon) {
+                // Duplicate identity → merge aliases, keep first definition's fields.
+                for alias in cfg.aliases.into_iter().chain(std::iter::once(name.clone())) {
+                    if alias != canon && !existing.aliases.iter().any(|a| a == &alias) {
+                        existing.aliases.push(alias);
+                    }
+                }
+            } else {
+                peers.insert(canon, cfg);
+            }
         }
     }
     Ok(())
@@ -214,6 +230,41 @@ mod tests {
         assert_eq!(sanitize_ini_value("val\nue"), "value");
         assert_eq!(sanitize_ini_value("val\r\nue"), "value");
         assert_eq!(sanitize_ini_value("clean"), "clean");
+    }
+
+    #[test]
+    fn duplicate_dot_local_collapses_to_canonical_entry() {
+        // Two sections: `M5Max.local` and `M5Max` must collapse into one
+        // canonical entry keyed by `m5max`, with both raw names preserved
+        // as aliases.
+        let ini = "[mesh]\nshared_secret=s\n\n\
+                   [M5Max.local]\nssh_alias=m5\nuser=rob\nos=macos\n\
+                   tailscale_ip=100.0.0.5\ndns_name=m5.ts.net\n\
+                   capabilities=claude\nrole=worker\nstatus=active\n\n\
+                   [M5Max]\nssh_alias=m5\nuser=rob\nos=macos\n\
+                   tailscale_ip=100.0.0.5\ndns_name=m5.ts.net\n\
+                   capabilities=claude\nrole=worker\nstatus=active\n";
+        let (_, peers) = parse_ini(ini).unwrap();
+        assert_eq!(peers.len(), 1, "duplicates must collapse to one entry");
+        assert!(peers.contains_key("m5max"));
+        let entry = &peers["m5max"];
+        assert!(entry.aliases.iter().any(|a| a == "M5Max.local"));
+        assert!(entry.aliases.iter().any(|a| a == "M5Max"));
+    }
+
+    #[test]
+    fn case_variants_collapse_to_canonical_entry() {
+        // `m5max.LOCAL` and `M5Max` must also collapse.
+        let ini = "[mesh]\nshared_secret=s\n\n\
+                   [m5max.LOCAL]\nssh_alias=m5\nuser=rob\nos=macos\n\
+                   tailscale_ip=100.0.0.5\ndns_name=m5.ts.net\n\
+                   capabilities=claude\nrole=worker\nstatus=active\n\n\
+                   [M5Max]\nssh_alias=m5\nuser=rob\nos=macos\n\
+                   tailscale_ip=100.0.0.5\ndns_name=m5.ts.net\n\
+                   capabilities=claude\nrole=worker\nstatus=active\n";
+        let (_, peers) = parse_ini(ini).unwrap();
+        assert_eq!(peers.len(), 1);
+        assert!(peers.contains_key("m5max"));
     }
 
     #[test]
