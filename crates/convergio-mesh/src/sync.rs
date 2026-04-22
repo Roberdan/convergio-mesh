@@ -8,7 +8,8 @@ use rusqlite::Connection;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::sync_apply::{apply_changes, export_changes_since};
+use crate::sync_apply::{apply_changes_detailed, export_changes_since, max_updated_at};
+use crate::sync_cursor::compute_new_cursor;
 use crate::transport::{fetch_changes_from_peer, send_changes_to_peer};
 use crate::types::{SyncMeta, DEFAULT_INTERVAL_SECS};
 
@@ -104,17 +105,27 @@ pub fn get_sync_meta(
 }
 
 /// Sync one table with a peer. Returns (sent, received, applied).
+///
+/// Cursor advance rule (see docs/sync-drift-root-cause.md):
+/// - Capture `round_start_at` BEFORE reading `since` so rows inserted
+///   mid-round keep an `updated_at` ≥ the eventual cursor and are caught
+///   by the next round.
+/// - Advance to `MAX(exported_max_updated_at, applied_max_updated_at)`,
+///   never above `round_start_at`, never by wall-clock alone.
+/// - If neither side exchanged a row, the cursor stays where it was —
+///   losing the previous wall-clock churn that caused §3's race.
 pub fn sync_table_with_peer(
     conn: &Connection,
     peer_addr: &str,
     table: &str,
 ) -> (usize, usize, usize) {
+    let round_start_at = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let since = get_sync_meta(conn, peer_addr, table)
         .ok()
         .flatten()
         .map(|m| m.last_synced);
 
-    info!(peer = %peer_addr, table, since = ?since, "sync table starting");
+    info!(peer = %peer_addr, table, since = ?since, round_start = %round_start_at, "sync table starting");
 
     let local_changes = match export_changes_since(conn, table, since.as_deref()) {
         Ok(c) => c,
@@ -128,6 +139,9 @@ pub fn sync_table_with_peer(
 
     if !local_changes.is_empty() {
         if let Err(e) = send_changes_to_peer(peer_addr, &local_changes) {
+            // WHY: never advance the cursor when send failed — peer B
+            // hasn't seen these rows, so exporting them again next round
+            // is the only way to guarantee delivery.
             error!(peer = %peer_addr, table, error = %e, "send changes failed");
             return (0, 0, 0);
         }
@@ -143,25 +157,42 @@ pub fn sync_table_with_peer(
 
     info!(peer = %peer_addr, table, count = remote_changes.len(), "remote changes fetched");
 
-    let applied = match apply_changes(conn, &remote_changes) {
-        Ok(n) => n,
+    let report = match apply_changes_detailed(conn, &remote_changes) {
+        Ok(r) => r,
         Err(e) => {
             warn!(peer = %peer_addr, table, error = %e, "apply failed");
             return (0, 0, 0);
         }
     };
-
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let meta = SyncMeta {
-        peer: peer_addr.to_string(),
-        table_name: table.to_string(),
-        last_synced: now,
-    };
-    if let Err(e) = upsert_sync_meta(conn, &meta) {
-        warn!(peer = %peer_addr, table, error = %e, "upsert meta failed");
+    if report.rejected > 0 {
+        // WHY: §4 — silent drops before this patch poisoned the cursor.
+        // Log loudly so ops can correlate divergence with specific rounds.
+        warn!(
+            peer = %peer_addr,
+            table,
+            rejected = report.rejected,
+            applied = report.applied,
+            "some remote rows rejected during apply",
+        );
     }
 
-    (local_changes.len(), remote_changes.len(), applied)
+    if let Some(final_cursor) = compute_new_cursor(
+        since.as_deref(),
+        max_updated_at(&local_changes).as_deref(),
+        report.applied_max_updated_at.as_deref(),
+        &round_start_at,
+    ) {
+        let meta = SyncMeta {
+            peer: peer_addr.to_string(),
+            table_name: table.to_string(),
+            last_synced: final_cursor,
+        };
+        if let Err(e) = upsert_sync_meta(conn, &meta) {
+            warn!(peer = %peer_addr, table, error = %e, "upsert meta failed");
+        }
+    }
+
+    (local_changes.len(), remote_changes.len(), report.applied)
 }
 
 #[cfg(test)]
